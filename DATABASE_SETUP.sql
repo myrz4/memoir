@@ -74,3 +74,20 @@ CREATE INDEX idx_events_organizer_id ON public.events(organizer_id);
 CREATE INDEX idx_events_slug ON public.events(slug);
 CREATE INDEX idx_memories_event_id ON public.memories(event_id);
 CREATE INDEX idx_memories_created_at ON public.memories(created_at DESC);
+
+-- STORAGE BUCKET SETUP
+-- Note: Run these commands in Supabase Storage section or use the SQL Editor
+-- 1. Go to Supabase Dashboard > Storage
+-- 2. Create a new bucket named "memories"
+-- 3. Make it PUBLIC (not private)
+-- 4. Run the RLS policy below:
+
+-- Storage RLS Policy for memories bucket
+-- Run this in SQL Editor:
+-- CREATE POLICY "Public uploads" ON storage.objects
+--   FOR INSERT TO public
+--   WITH CHECK (bucket_id = 'memories');
+
+-- CREATE POLICY "Public reads" ON storage.objects
+--   FOR SELECT TO public
+--   USING (bucket_id = 'memories');

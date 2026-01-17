@@ -90,8 +90,9 @@ export default function EventPage() {
       return
     }
 
+    // Check if event is locked FIRST
     if (event.is_locked) {
-      setError('This event is locked')
+      setError('This event is closed and is not accepting new memories')
       return
     }
 
@@ -113,47 +114,62 @@ export default function EventPage() {
         .toLowerCase()
       const fileName = `${event.id}/${Date.now()}-${sanitizedFileName}`
 
-      const { error: uploadError } = await supabase.storage
-        .from('memories')
-        .upload(fileName, file)
+      try {
+        const { error: uploadError } = await supabase.storage
+          .from('memories')
+          .upload(fileName, file)
 
-      if (uploadError) {
-        setError('Failed to upload file')
+        if (uploadError) {
+          console.error('Upload error:', uploadError)
+          setError('Failed to upload file. Please try again.')
+          setLoading(false)
+          return
+        }
+
+        const { data } = supabase.storage
+          .from('memories')
+          .getPublicUrl(fileName)
+
+        mediaUrl = data.publicUrl
+      } catch (err) {
+        console.error('File upload error:', err)
+        setError('Failed to upload file. Storage might not be configured.')
+        setLoading(false)
+        return
+      }
+    }
+
+    try {
+      const { data: newMemory, error: insertError } = await supabase
+        .from('memories')
+        .insert({
+          event_id: event.id,
+          sender_name: name.trim() || 'Guest',
+          message: message.trim(),
+          media_url: mediaUrl,
+          media_type: mediaType,
+        })
+        .select()
+        .single()
+
+      if (insertError) {
+        console.error('Insert error:', insertError)
+        setError('Failed to submit memory. Please try again.')
         setLoading(false)
         return
       }
 
-      const { data } = supabase.storage
-        .from('memories')
-        .getPublicUrl(fileName)
-
-      mediaUrl = data.publicUrl
-    }
-
-    const { data: newMemory, error: insertError } = await supabase
-      .from('memories')
-      .insert({
-        event_id: event.id,
-        sender_name: name.trim() || 'Guest',
-        message: message.trim(),
-        media_url: mediaUrl,
-        media_type: mediaType,
-      })
-      .select()
-      .single()
-
-    if (insertError) {
-      setError('Failed to submit memory')
+      setMemories([newMemory, ...memories])
       setLoading(false)
-      return
+      setSubmitted(true)
+      setName('')
+      setMessage('')
+      setFile(null)
+    } catch (err) {
+      console.error('Error submitting memory:', err)
+      setError('Failed to submit memory. Please try again.')
+      setLoading(false)
     }
-
-    setMemories([newMemory, ...memories])
-    setLoading(false)
-    setSubmitted(true)
-    setName('')
-    setMessage('')
-    setFile(null)
   }
 
   const lockEvent = async () => {
@@ -342,6 +358,13 @@ export default function EventPage() {
                         className="w-full h-48 object-cover"
                       />
                     )}
+                    {memory.media_type === 'video' && memory.media_url && (
+                      <video
+                        controls
+                        className="w-full h-48 object-cover bg-black"
+                        src={memory.media_url}
+                      />
+                    )}
                     <div className="p-4 space-y-2">
                       <div className="flex items-start justify-between">
                         <div>
@@ -499,6 +522,13 @@ export default function EventPage() {
                           src={memory.media_url}
                           alt="Memory"
                           className="w-full rounded max-h-48 object-cover"
+                        />
+                      )}
+                      {memory.media_type === 'video' && memory.media_url && (
+                        <video
+                          controls
+                          className="w-full rounded max-h-48 bg-black"
+                          src={memory.media_url}
                         />
                       )}
                       <p className="text-sm text-gray-200">{memory.message}</p>
