@@ -161,6 +161,17 @@ export default function EventPage() {
         return
       }
 
+      // Increment memory count in events table
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ memory_count: memories.length + 1 })
+        .eq('id', event.id)
+
+      if (updateError) {
+        console.error('Update error:', updateError)
+        // Don't fail the submission if counter update fails
+      }
+
       setMemories([newMemory, ...memories])
       setLoading(false)
       setSubmitted(true)
