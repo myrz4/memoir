@@ -1,28 +1,55 @@
 'use client'
 
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/src/lib/supabase'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
+interface Memory {
+  id: string
+  sender_name: string
+  message: string
+  media_url: string | null
+  created_at: string
+  media_type: 'image' | 'video' | 'none'
+}
+
+interface Event {
+  id: string
+  name: string
+  slug: string
+  organizer_id: string
+  is_locked: boolean
+  memory_count: number
+}
+
 export default function EventPage() {
   const { slug } = useParams()
+  const router = useRouter()
 
-  const [event, setEvent] = useState<any>(null)
-  const [memories, setMemories] = useState<any[]>([])
+  const [event, setEvent] = useState<Event | null>(null)
+  const [memories, setMemories] = useState<Memory[]>([])
   const [name, setName] = useState('')
   const [message, setMessage] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
-  const [showMemories, setShowMemories] = useState(false)
+  const [isOrganizerView, setIsOrganizerView] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const [pageLoading, setPageLoading] = useState(true)
 
   // Fetch event and memories
   useEffect(() => {
     if (!slug) return
 
     const fetchData = async () => {
+      // Get current user
+      const {
+        data: { user: currentUser },
+      } = await supabase.auth.getUser()
+      setUser(currentUser)
+
       // Fetch event
       const { data: eventData, error: eventError } = await supabase
         .from('events')
@@ -32,10 +59,16 @@ export default function EventPage() {
 
       if (eventError) {
         setError('Event not found')
+        setPageLoading(false)
         return
       }
 
       setEvent(eventData)
+
+      // Check if current user is the organizer
+      if (currentUser && currentUser.id === eventData.organizer_id) {
+        setIsOrganizerView(true)
+      }
 
       // Fetch memories
       const { data: memoriesData } = await supabase
@@ -45,6 +78,7 @@ export default function EventPage() {
         .order('created_at', { ascending: false })
 
       setMemories(memoriesData || [])
+      setPageLoading(false)
     }
 
     fetchData()
@@ -56,23 +90,24 @@ export default function EventPage() {
       return
     }
 
+    if (event.is_locked) {
+      setError('This event is locked')
+      return
+    }
+
     setLoading(true)
     setError('')
 
-    let mediaType: 'image' | 'video' | 'none' = 'none'
     let mediaUrl: string | null = null
+    let mediaType: 'image' | 'video' | 'none' = 'none'
 
     if (file) {
-      // MIME-based detection (non-negotiable per spec)
-      if (file.type.startsWith('image/')) {
-        mediaType = 'image'
-      } else if (file.type.startsWith('video/')) {
-        mediaType = 'video'
-      } else {
-        mediaType = 'none'
-      }
+      mediaType = file.type.startsWith('image/')
+        ? 'image'
+        : file.type.startsWith('video/')
+          ? 'video'
+          : 'none'
 
-      // Upload to storage - sanitize filename
       const sanitizedFileName = file.name
         .replace(/[^a-zA-Z0-9._-]/g, '_')
         .toLowerCase()
@@ -83,13 +118,11 @@ export default function EventPage() {
         .upload(fileName, file)
 
       if (uploadError) {
-        console.error('Upload error:', uploadError)
         setError('Failed to upload file')
         setLoading(false)
         return
       }
 
-      // Get public URL
       const { data } = supabase.storage
         .from('memories')
         .getPublicUrl(fileName)
@@ -97,7 +130,6 @@ export default function EventPage() {
       mediaUrl = data.publicUrl
     }
 
-    // Insert memory into database
     const { data: newMemory, error: insertError } = await supabase
       .from('memories')
       .insert({
@@ -111,13 +143,11 @@ export default function EventPage() {
       .single()
 
     if (insertError) {
-      console.error('Insert error:', insertError)
       setError('Failed to submit memory')
       setLoading(false)
       return
     }
 
-    // Add to memories list
     setMemories([newMemory, ...memories])
     setLoading(false)
     setSubmitted(true)
@@ -126,9 +156,70 @@ export default function EventPage() {
     setFile(null)
   }
 
-  if (!event && !error) {
+  const lockEvent = async () => {
+    if (!event) return
+    const { error } = await supabase
+      .from('events')
+      .update({ is_locked: true })
+      .eq('id', event.id)
+
+    if (!error) {
+      setEvent({ ...event, is_locked: true })
+    }
+  }
+
+  const unlockEvent = async () => {
+    if (!event) return
+    const { error } = await supabase
+      .from('events')
+      .update({ is_locked: false })
+      .eq('id', event.id)
+
+    if (!error) {
+      setEvent({ ...event, is_locked: false })
+    }
+  }
+
+  const copyEventLink = () => {
+    const url = `${window.location.origin}/event/${event?.slug}`
+    navigator.clipboard.writeText(url)
+    alert('Event link copied!')
+  }
+
+  const downloadQRCode = () => {
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+      `${window.location.origin}/event/${event?.slug}`
+    )}`
+    const link = document.createElement('a')
+    link.href = qrUrl
+    link.download = `${event?.slug}-qr.png`
+    link.click()
+  }
+
+  // Event is locked
+  if (event && event.is_locked && !isOrganizerView) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black">
+      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white flex items-center justify-center px-4">
+        <div className="text-center space-y-6 max-w-md">
+          <div className="text-6xl">🔒</div>
+          <h1 className="text-3xl font-bold">This event is closed</h1>
+          <p className="text-gray-300 text-lg">
+            Thank you for being a part of this memory ❤️
+          </p>
+          <Link
+            href="/"
+            className="inline-block px-6 py-3 bg-white text-black rounded-lg font-semibold hover:bg-gray-200 transition"
+          >
+            Back to Home
+          </Link>
+        </div>
+      </main>
+    )
+  }
+
+  if (pageLoading) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black flex items-center justify-center">
         <p className="text-gray-400">Loading...</p>
       </main>
     )
@@ -136,10 +227,10 @@ export default function EventPage() {
 
   if (error && !event) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-black">
-        <div className="text-center">
-          <p className="text-red-400 mb-4">{error}</p>
-          <Link href="/" className="text-blue-400 hover:underline">
+      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <p className="text-red-400 text-lg">{error}</p>
+          <Link href="/" className="text-white hover:underline font-semibold">
             ← Back to Home
           </Link>
         </div>
@@ -147,191 +238,277 @@ export default function EventPage() {
     )
   }
 
+  if (!event) return null
+
   return (
-    <main className="min-h-screen bg-black text-white">
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        {/* Header */}
-        <div className="text-center space-y-2 mb-10">
-          <Link href="/" className="text-blue-400 hover:underline text-sm">
-            ← Back
-          </Link>
-          <h1 className="text-4xl font-bold">{event?.name}</h1>
-          <p className="text-gray-400">Leave a memory for this event</p>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Form Section */}
-          <div className="lg:col-span-1">
-            {!submitted ? (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  submitMemory()
-                }}
-                className="space-y-4 sticky top-10"
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white">
+      {/* Organizer Header */}
+      {isOrganizerView && (
+        <div className="border-b border-gray-700 bg-black/50 backdrop-blur sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+            <h1 className="text-xl font-bold">MEMOIR</h1>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/dashboard"
+                className="px-4 py-2 rounded font-semibold hover:bg-gray-800 transition"
               >
-                {/* Name Input */}
+                Back to Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Organizer View */}
+        {isOrganizerView ? (
+          <>
+            {/* Event Header */}
+            <div className="mb-12 space-y-6">
+              <h1 className="text-4xl font-bold">{event.name} 💍</h1>
+
+              {/* Event Link Section */}
+              <div className="bg-slate-800/50 border border-gray-700 rounded-lg p-6 space-y-4">
                 <div>
-                  <label className="text-sm text-gray-400">
-                    Name (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full mt-2 p-3 rounded bg-gray-900 border border-gray-700 focus:border-white outline-none text-white"
-                    placeholder="Your name"
-                  />
+                  <p className="text-sm text-gray-400 mb-2">Event Link:</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}/event/${event.slug}`}
+                      className="flex-1 px-4 py-2 bg-slate-900 border border-gray-600 rounded text-white text-sm"
+                    />
+                    <button
+                      onClick={copyEventLink}
+                      className="px-4 py-2 bg-white text-black rounded font-semibold hover:bg-gray-200 transition text-sm"
+                    >
+                      Copy
+                    </button>
+                  </div>
                 </div>
 
-                {/* Message Textarea */}
+                {/* QR Code Section */}
                 <div>
-                  <label className="text-sm text-gray-400">Message</label>
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    className="w-full mt-2 p-3 rounded bg-gray-900 border border-gray-700 focus:border-white outline-none text-white text-sm"
-                    placeholder="Write your memory..."
-                    rows={4}
-                  />
+                  <p className="text-sm text-gray-400 mb-2">QR Code:</p>
+                  <div className="flex gap-4">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+                        `${window.location.origin}/event/${event.slug}`
+                      )}`}
+                      alt="QR Code"
+                      className="w-40 h-40 bg-white p-2 rounded"
+                    />
+                    <button
+                      onClick={downloadQRCode}
+                      className="px-4 py-2 bg-white text-black rounded font-semibold hover:bg-gray-200 transition h-fit"
+                    >
+                      Download
+                    </button>
+                  </div>
                 </div>
+              </div>
 
-                {/* File Upload */}
-                <div>
-                  <label className="text-sm text-gray-400">
-                    Photo or Video (optional)
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,video/*"
-                    onChange={(e) => setFile(e.target.files?.[0] || null)}
-                    className="w-full mt-2 text-xs text-gray-400 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-gray-900 file:text-white cursor-pointer"
-                  />
-                  {file && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      📎 {file.name}
-                    </p>
-                  )}
-                </div>
-
-                {/* Error Message */}
-                {error && <p className="text-sm text-red-400">{error}</p>}
-
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  disabled={loading || !message.trim()}
-                  className="w-full py-3 bg-white text-black rounded font-semibold hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm"
-                >
-                  {loading ? '⏳ Submitting...' : '✨ Submit Memory'}
+              {/* Action Buttons */}
+              <div className="flex gap-4">
+                <button className="px-6 py-3 bg-slate-700 text-white rounded-lg font-semibold hover:bg-slate-600 transition">
+                  Export to Google Drive
                 </button>
-              </form>
-            ) : (
-              <div className="text-center space-y-4 sticky top-10 bg-gray-900 p-6 rounded border border-gray-700">
-                <p className="text-5xl">✨</p>
-                <h2 className="text-xl font-semibold">Memory Submitted!</h2>
-                <p className="text-gray-400 text-sm">
-                  Thank you for sharing
-                </p>
                 <button
-                  onClick={() => {
-                    setSubmitted(false)
-                    setShowMemories(false)
-                  }}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium transition"
+                  onClick={event.is_locked ? unlockEvent : lockEvent}
+                  className={`px-6 py-3 rounded-lg font-semibold transition ${
+                    event.is_locked
+                      ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                      : 'bg-slate-700 hover:bg-slate-600 text-white'
+                  }`}
                 >
-                  Submit Another
+                  {event.is_locked ? '🔓 Unlock Event' : '🔒 Lock Event'}
                 </button>
               </div>
-            )}
-          </div>
-
-          {/* Memories Section */}
-          <div className="lg:col-span-2">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">
-                Memories ({memories.length})
-              </h2>
-              <button
-                onClick={() => setShowMemories(!showMemories)}
-                className="text-sm text-gray-400 hover:text-white transition"
-              >
-                {showMemories ? 'Hide' : 'Show'}
-              </button>
             </div>
 
-            {showMemories && memories.length > 0 ? (
-              <div className="space-y-4 max-h-[800px] overflow-y-auto">
+            {/* Memories Grid */}
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold">Memories ({memories.length})</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {memories.map((memory) => (
                   <div
                     key={memory.id}
-                    className="border border-gray-700 rounded-lg p-4 bg-gray-900 hover:bg-gray-800 transition"
+                    className="bg-slate-800/50 border border-gray-700 rounded-lg overflow-hidden hover:border-gray-500 transition"
                   >
-                    {/* Header */}
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-semibold text-sm">
-                          {memory.sender_name}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(memory.created_at).toLocaleDateString(
-                            undefined,
-                            {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            }
-                          )}
-                        </p>
-                      </div>
-                      <span className="text-xs px-2 py-1 bg-gray-700 rounded">
-                        {memory.media_type === 'none'
-                          ? '📝'
-                          : memory.media_type === 'image'
-                            ? '🖼️'
-                            : '🎥'}
-                      </span>
-                    </div>
-
-                    {/* Message */}
-                    <p className="text-sm text-gray-200 mb-3 whitespace-pre-wrap break-words">
-                      {memory.message}
-                    </p>
-
-                    {/* Media */}
                     {memory.media_type === 'image' && memory.media_url && (
                       <img
                         src={memory.media_url}
-                        alt="Memory"
-                        className="w-full rounded max-h-60 object-cover"
+                        alt={memory.sender_name}
+                        className="w-full h-48 object-cover"
                       />
                     )}
-
-                    {memory.media_type === 'video' && memory.media_url && (
-                      <video
-                        controls
-                        className="w-full rounded max-h-60"
-                        src={memory.media_url}
-                      />
-                    )}
+                    <div className="p-4 space-y-2">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold">{memory.sender_name}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(memory.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span className="text-lg">
+                          {memory.media_type === 'image'
+                            ? '📸'
+                            : memory.media_type === 'video'
+                              ? '🎥'
+                              : '💬'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-300 line-clamp-3">
+                        {memory.message}
+                      </p>
+                    </div>
                   </div>
                 ))}
               </div>
-            ) : showMemories ? (
-              <div className="text-center py-12 text-gray-400">
-                <p>No memories yet</p>
-              </div>
-            ) : (
-              <div className="text-center py-12 bg-gray-900 rounded border border-gray-700">
-                <p className="text-gray-400">
-                  {memories.length} {memories.length === 1 ? 'memory' : 'memories'} submitted
+              {memories.length === 0 && (
+                <p className="text-center text-gray-400 py-12">
+                  No memories yet. Share the event link to get started!
                 </p>
+              )}
+            </div>
+          </>
+        ) : (
+          /* Attendee View */
+          <div className="max-w-2xl mx-auto">
+            {/* Event Header */}
+            <div className="text-center mb-12 space-y-4">
+              <h1 className="text-4xl font-bold">{event.name} 💍</h1>
+              <p className="text-xl text-gray-300">Leave a memory ❤️</p>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-8">
+              {/* Upload Form */}
+              <div className="lg:col-span-1">
+                {!submitted ? (
+                  <div className="bg-slate-800/50 backdrop-blur border border-gray-700 rounded-lg p-6 space-y-4 sticky top-20">
+                    <form onSubmit={(e) => {
+                      e.preventDefault()
+                      submitMemory()
+                    }} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Name (optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="Your name"
+                          className="w-full px-4 py-2 bg-slate-900 border border-gray-600 rounded focus:border-white outline-none text-white placeholder-gray-500 transition"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Message
+                        </label>
+                        <textarea
+                          value={message}
+                          onChange={(e) => setMessage(e.target.value)}
+                          placeholder="Write your memory..."
+                          rows={5}
+                          className="w-full px-4 py-2 bg-slate-900 border border-gray-600 rounded focus:border-white outline-none text-white placeholder-gray-500 transition resize-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Upload Photo
+                        </label>
+                        <input
+                          type="file"
+                          accept="image/*,video/*"
+                          onChange={(e) => setFile(e.target.files?.[0] || null)}
+                          className="w-full text-xs text-gray-400 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-white file:text-black file:font-semibold cursor-pointer"
+                        />
+                        {file && (
+                          <p className="text-xs text-gray-400 mt-2">
+                            ✓ {file.name}
+                          </p>
+                        )}
+                      </div>
+
+                      {error && (
+                        <div className="bg-red-500/20 border border-red-500 text-red-300 px-3 py-2 rounded text-sm">
+                          {error}
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={loading || !message.trim()}
+                        className="w-full py-3 bg-white text-black rounded-lg font-semibold hover:bg-gray-200 transition disabled:opacity-50"
+                      >
+                        {loading ? 'Submitting...' : 'Submit Memory'}
+                      </button>
+                    </form>
+                  </div>
+                ) : (
+                  <div className="bg-slate-800/50 backdrop-blur border border-gray-700 rounded-lg p-6 text-center space-y-4 sticky top-20">
+                    <div className="text-5xl">✅</div>
+                    <h2 className="text-2xl font-bold">Memory submitted</h2>
+                    <p className="text-gray-300">Thank you for sharing ❤️</p>
+                    <button
+                      onClick={() => {
+                        setSubmitted(false)
+                        setName('')
+                        setMessage('')
+                        setFile(null)
+                      }}
+                      className="w-full py-2 bg-white text-black rounded-lg font-semibold hover:bg-gray-200 transition text-sm"
+                    >
+                      Share Another
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Memories List */}
+              <div className="lg:col-span-2">
+                <h2 className="text-2xl font-bold mb-6">
+                  Memories ({memories.length})
+                </h2>
+                <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                  {memories.map((memory) => (
+                    <div
+                      key={memory.id}
+                      className="bg-slate-800/50 border border-gray-700 rounded-lg p-4 space-y-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold">{memory.sender_name}</p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(memory.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span className="text-lg">
+                          {memory.media_type === 'image'
+                            ? '📸'
+                            : memory.media_type === 'video'
+                              ? '🎥'
+                              : '💬'}
+                        </span>
+                      </div>
+                      {memory.media_type === 'image' && memory.media_url && (
+                        <img
+                          src={memory.media_url}
+                          alt="Memory"
+                          className="w-full rounded max-h-48 object-cover"
+                        />
+                      )}
+                      <p className="text-sm text-gray-200">{memory.message}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </main>
   )
