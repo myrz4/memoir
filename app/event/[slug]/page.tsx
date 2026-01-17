@@ -26,6 +26,7 @@ interface Event {
 export default function EventPage() {
   const { slug } = useParams()
   const router = useRouter()
+  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
 
   const [event, setEvent] = useState<Event | null>(null)
   const [memories, setMemories] = useState<Memory[]>([])
@@ -38,6 +39,7 @@ export default function EventPage() {
   const [isOrganizerView, setIsOrganizerView] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [pageLoading, setPageLoading] = useState(true)
+  const [guestMode, setGuestMode] = useState(searchParams.get('mode') === 'guest')
 
   // Fetch event and memories
   useEffect(() => {
@@ -66,7 +68,7 @@ export default function EventPage() {
       setEvent(eventData)
 
       // Check if current user is the organizer
-      if (currentUser && currentUser.id === eventData.organizer_id) {
+      if (currentUser && currentUser.id === eventData.organizer_id && !guestMode) {
         setIsOrganizerView(true)
       }
 
@@ -197,14 +199,14 @@ export default function EventPage() {
   }
 
   const copyEventLink = () => {
-    const url = `${window.location.origin}/event/${event?.slug}`
+    const url = `${window.location.origin}/event/${event?.slug}?mode=guest`
     navigator.clipboard.writeText(url)
     alert('Event link copied!')
   }
 
   const downloadQRCode = () => {
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
-      `${window.location.origin}/event/${event?.slug}`
+      `${window.location.origin}/event/${event?.slug}?mode=guest`
     )}`
     const link = document.createElement('a')
     link.href = qrUrl
