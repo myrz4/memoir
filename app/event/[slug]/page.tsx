@@ -92,6 +92,18 @@ export default function EventPage() {
       return
     }
 
+    // Check if event exists in database
+    const { data: eventCheck, error: checkError } = await supabase
+      .from('events')
+      .select('id')
+      .eq('id', event.id)
+      .single()
+
+    if (checkError || !eventCheck) {
+      setError('This event no longer exists')
+      return
+    }
+
     // Check if event is locked FIRST
     if (event.is_locked) {
       setError('This event is closed and is not accepting new memories')
@@ -206,6 +218,35 @@ export default function EventPage() {
 
     if (!error) {
       setEvent({ ...event, is_locked: false })
+    }
+  }
+
+  const deleteEvent = async () => {
+    if (!event) return
+    
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${event.name}"? This action cannot be undone.`
+    )
+    
+    if (!confirmDelete) return
+
+    setLoading(true)
+    try {
+      // Delete the event (memories will cascade delete automatically)
+      // Note: Media files in storage will remain but are orphaned and harmless
+      const { error: deleteError } = await supabase
+        .from('events')
+        .delete()
+        .eq('id', event.id)
+
+      if (deleteError) throw deleteError
+      
+      // Redirect to dashboard after successful deletion
+      router.push('/dashboard')
+    } catch (err) {
+      console.error('Delete error:', err)
+      setError('Failed to delete event')
+      setLoading(false)
     }
   }
 
@@ -351,6 +392,13 @@ export default function EventPage() {
                   }`}
                 >
                   {event.is_locked ? '🔓 Unlock Event' : '🔒 Lock Event'}
+                </button>
+                <button
+                  onClick={deleteEvent}
+                  disabled={loading}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  🗑️ Delete Event
                 </button>
               </div>
             </div>
