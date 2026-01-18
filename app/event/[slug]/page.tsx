@@ -250,6 +250,47 @@ export default function EventPage() {
     }
   }
 
+  const deleteMemory = async (memoryId: string) => {
+    const confirmDelete = window.confirm(
+      'Are you sure you want to delete this memory? This action cannot be undone.'
+    )
+    
+    if (!confirmDelete) return
+
+    try {
+      // Delete the memory record
+      const { error: deleteError } = await supabase
+        .from('memories')
+        .delete()
+        .eq('id', memoryId)
+
+      if (deleteError) {
+        console.error('Delete error details:', deleteError)
+        throw new Error(deleteError.message || 'Failed to delete memory')
+      }
+
+      // Update memory count
+      const newCount = Math.max(0, (event?.memory_count || 0) - 1)
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ memory_count: newCount })
+        .eq('id', event?.id)
+
+      if (updateError) throw updateError
+
+      // Update local state
+      setMemories(memories.filter((m) => m.id !== memoryId))
+      setEvent(event ? { ...event, memory_count: newCount } : null)
+      setError('') // Clear any previous errors
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete memory'
+      console.error('Delete memory error:', err)
+      setError(errorMessage)
+      // Show error for 5 seconds
+      setTimeout(() => setError(''), 5000)
+    }
+  }
+
   const copyEventLink = () => {
     const url = `${window.location.origin}/event/${event?.slug}?mode=guest`
     navigator.clipboard.writeText(url)
@@ -410,7 +451,7 @@ export default function EventPage() {
                 {memories.map((memory) => (
                   <div
                     key={memory.id}
-                    className="bg-slate-800/50 border border-gray-700 rounded-lg overflow-hidden hover:border-gray-500 transition"
+                    className="bg-slate-800/50 border border-gray-700 rounded-lg overflow-hidden hover:border-gray-500 transition group relative"
                   >
                     {memory.media_type === 'image' && memory.media_url && (
                       <img
@@ -426,6 +467,13 @@ export default function EventPage() {
                         src={memory.media_url}
                       />
                     )}
+                    {/* Delete Button - appears on hover */}
+                    <button
+                      onClick={() => deleteMemory(memory.id)}
+                      className="absolute top-2 right-2 bg-red-600/80 hover:bg-red-700 text-white px-2 py-1 rounded text-xs font-semibold opacity-0 group-hover:opacity-100 transition"
+                    >
+                      🗑️ Delete
+                    </button>
                     <div className="p-4 space-y-2">
                       <div className="flex items-start justify-between">
                         <div>

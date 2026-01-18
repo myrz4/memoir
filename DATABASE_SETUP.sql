@@ -69,6 +69,18 @@ FOR SELECT
 TO public
 USING (true);
 
+CREATE POLICY "organizer delete memories"
+ON public.memories
+FOR DELETE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.events
+    WHERE events.id = memories.event_id
+    AND events.organizer_id = auth.uid()
+  )
+);
+
 -- Create indexes for better query performance
 CREATE INDEX idx_events_organizer_id ON public.events(organizer_id);
 CREATE INDEX idx_events_slug ON public.events(slug);
