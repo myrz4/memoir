@@ -72,19 +72,19 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white">
       {/* Header */}
-      <header className="border-b border-gray-700 bg-black/50 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">MEMOIR</h1>
+      <header className="border-b border-gray-700/30 bg-black/40 backdrop-blur sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-pink-300 via-purple-300 to-indigo-300 bg-clip-text text-transparent">✨ MEMOIR</h1>
           <div className="flex items-center gap-4">
             <Link
               href="/create-event"
-              className="px-4 py-2 bg-white text-black rounded-lg font-semibold hover:bg-gray-200 transition"
+              className="px-6 py-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-pink-500/50 transition"
             >
-              + Create Event
+              + New Event
             </Link>
             <button
               onClick={handleLogout}
-              className="px-4 py-2 rounded font-semibold hover:bg-gray-800 transition"
+              className="px-6 py-2 rounded-lg font-semibold hover:bg-gray-800/50 transition border border-gray-700/50"
             >
               Logout
             </button>
@@ -93,51 +93,60 @@ export default function DashboardPage() {
       </header>
 
       {/* Main Content */}
-      <section className="max-w-6xl mx-auto px-6 py-12">
+      <section className="max-w-7xl mx-auto px-6 py-16">
         <div className="mb-12">
-          <h2 className="text-3xl font-bold mb-2">My Events</h2>
-          <p className="text-gray-400">Manage your events and view memories</p>
+          <h2 className="text-4xl font-bold mb-3">My Events</h2>
+          <p className="text-gray-400 text-lg">Manage your events and celebrate memories</p>
         </div>
 
         {loading ? (
-          <div className="text-center py-12">
-            <p className="text-gray-400">Loading events...</p>
+          <div className="text-center py-16">
+            <p className="text-gray-400 text-lg">Loading your events...</p>
           </div>
         ) : events.length === 0 ? (
-          <div className="text-center py-12 space-y-4">
-            <p className="text-gray-400 text-lg">No events yet</p>
+          <div className="text-center py-16 space-y-6 bg-gradient-to-br from-slate-800 to-slate-900 border border-gray-700/50 rounded-2xl p-12">
+            <p className="text-gray-400 text-lg">No events created yet</p>
             <Link
               href="/create-event"
-              className="inline-block px-6 py-3 bg-white text-black rounded-lg font-semibold hover:bg-gray-200 transition"
+              className="inline-block px-8 py-4 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-pink-500/50 transition"
             >
               Create Your First Event
             </Link>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {events.map((event) => (
               <Link
                 key={event.id}
                 href={`/event/${event.slug}`}
-                className="block p-6 bg-slate-800/50 border border-gray-700 rounded-lg hover:border-gray-500 transition"
+                className="group bg-gradient-to-br from-slate-800 to-slate-900 border border-gray-700/50 rounded-2xl overflow-hidden hover:border-gray-500 transition hover:shadow-2xl hover:shadow-slate-900/50"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    <span className="text-3xl">{getEventEmoji(event.eventType)}</span>
-                    <div>
-                      <h3 className="text-xl font-semibold">{event.name}</h3>
+                <div className="p-8 space-y-6">
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center gap-3">
+                        <span className="text-4xl">{getEventEmoji(event.eventType)}</span>
+                        <h3 className="text-2xl font-bold group-hover:text-pink-300 transition">{event.name}</h3>
+                      </div>
                       {event.date && (
                         <p className="text-sm text-gray-400">
-                          {new Date(event.date).toLocaleDateString()}
+                          📅 {new Date(event.date).toLocaleDateString()}
                         </p>
                       )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold">{event.memoryCount}</p>
-                    <p className="text-sm text-gray-400">memories</p>
+                  
+                  <div className="bg-slate-900/50 rounded-lg p-4 border border-gray-700/30">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl font-bold text-pink-300">{event.memoryCount}</span>
+                      <span className="text-gray-400">memories captured</span>
+                    </div>
                   </div>
-                  <span className="ml-6 text-gray-500">→</span>
+                  
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-700/30">
+                    <span className="text-sm text-gray-400">View details</span>
+                    <span className="text-gray-500 group-hover:text-pink-300 transition">→</span>
+                  </div>
                 </div>
               </Link>
             ))}
