@@ -250,6 +250,47 @@ export default function EventPage() {
     }
   }
 
+  const downloadMemoriesAsZip = async () => {
+    if (!event) return
+
+    try {
+      setLoading(true)
+      setError('')
+
+      const response = await fetch('/api/download-memories-zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventName: event.name,
+          memories: memories,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to generate ZIP')
+      }
+
+      // Get the ZIP blob
+      const blob = await response.blob()
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${event.name}-memories.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to download ZIP'
+      console.error('Download error:', err)
+      setError(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const deleteMemory = async (memoryId: string) => {
     const confirmDelete = window.confirm(
       'Are you sure you want to delete this memory? This action cannot be undone.'
@@ -421,8 +462,12 @@ export default function EventPage() {
 
               {/* Action Buttons */}
               <div className="flex gap-4">
-                <button className="px-6 py-3 bg-slate-700 text-white rounded-lg font-semibold hover:bg-slate-600 transition">
-                  Export to Google Drive
+                <button
+                  onClick={downloadMemoriesAsZip}
+                  disabled={loading}
+                  className="px-6 py-3 bg-slate-700 text-white rounded-lg font-semibold hover:bg-slate-600 transition disabled:opacity-50"
+                >
+                  📥 Download as ZIP
                 </button>
                 <button
                   onClick={event.is_locked ? unlockEvent : lockEvent}
